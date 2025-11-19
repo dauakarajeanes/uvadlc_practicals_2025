@@ -33,6 +33,8 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 
+import matplotlib.pyplot as plt
+
 
 def accuracy(predictions, targets):
     """
@@ -54,6 +56,10 @@ def accuracy(predictions, targets):
     #######################
     # PUT YOUR CODE HERE  #
     #######################
+
+    with torch.no_grad():
+        predicted = predictions.argmax(dim=1)
+        accuracy = (predicted == targets).float().mean().item()
 
     #######################
     # END OF YOUR CODE    #
@@ -82,6 +88,24 @@ def evaluate_model(model, data_loader):
     #######################
     # PUT YOUR CODE HERE  #
     #######################
+
+    model.eval()
+
+    N = 0
+    correct = 0
+
+    with torch.no_grad():
+      for x, y in data_loader:
+          
+          x = x.flatten(1)
+
+          predictions = model(x)
+
+          correct = correct + (accuracy(predictions, y) * x.size(0))
+
+          N = N + x.size(0)
+
+    avg_accuracy = correct / N
 
     #######################
     # END OF YOUR CODE    #
@@ -145,15 +169,54 @@ def train(hidden_dims, lr, use_batch_norm, batch_size, epochs, seed, data_dir):
     #######################
 
     # TODO: Initialize model and loss module
-    model = ...
-    loss_module = ...
+    model = MLP(3072, hidden_dims, 10, use_batch_norm=use_batch_norm)
+    loss_module = nn.CrossEntropyLoss()
     # TODO: Training loop including validation
     # TODO: Do optimization with the simple SGD optimizer
-    val_accuracies = ...
+    val_accuracies = []
+    train_losses = []
+    optimizer = optim.SGD(model.parameters(), lr=lr)
+    best_val = -1.0
+    best_model = None
+
+    for epoch in range(epochs):
+
+      epoch_loss = 0.0
+      samples = 0
+        
+      for x, y in cifar10_loader["train"]:
+
+        x = x.flatten(1)
+
+        logits = model(x)
+        loss = loss_module(logits, y)
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+
+        epoch_loss = epoch_loss + loss.item() * (y.size(0))
+        samples = samples + (y.size(0))
+
+      avg_train_loss = epoch_loss / max(1, samples)
+      train_losses.append(avg_train_loss)
+
+      val_acc_epoch = evaluate_model(model, cifar10_loader["validation"])
+      val_accuracies.append(val_acc_epoch)
+
+      if val_acc_epoch > best_val:
+          best_val = val_acc_epoch
+          best_model = deepcopy(model)
+        
+      print(f"Epoch: {epoch} - train loss: {avg_train_loss} - validation accuracy: {val_acc_epoch}")
+
     # TODO: Test best model
-    test_accuracy = ...
+    if best_model is not None:
+        model = best_model
+
+    test_accuracy = evaluate_model(model, cifar10_loader["test"])
     # TODO: Add any information you might want to save for plotting
-    logging_dict = ...
+    logging_dict = {"train losses": train_losses, "validation accuracies": val_accuracies, "test accuracy": test_accuracy}
+    np.savez("training_logs(pytorch).npz", train_losses=train_losses, val_accuracies=val_accuracies, test_accuracy=test_accuracy)
     #######################
     # END OF YOUR CODE    #
     #######################
@@ -189,5 +252,40 @@ if __name__ == '__main__':
     kwargs = vars(args)
 
     train(**kwargs)
-    # Feel free to add any additional functions, such as plotting of the loss curve here
     
+    # Feel free to add any additional functions, such as plotting of the loss curve here
+    logs = np.load("training_logs(pytorch).npz", allow_pickle=True)
+    train_losses = logs["train_losses"]
+    val_accuracies = logs["val_accuracies"]
+    test_accuracy = logs["test_accuracy"]
+
+    print(f"Best validation accuracy (Pytorch): {max(val_accuracies):.4f}")
+    print(f"Test accuracy (Pytorch): {test_accuracy:.4f}")
+
+    epochs = np.arange(1, len(train_losses) + 1)
+
+    plt.figure(figsize=(12, 5))
+
+    plt.subplot(1, 2, 1)
+    plt.plot(epochs, train_losses, label="Train Loss (Pytorch)", color="blue", marker="o")
+    plt.xlabel("Epoch")
+    plt.ylabel("Loss")
+    plt.title("Training Loss per Epoch")
+    plt.xticks(epochs)
+    plt.grid(True, linestyle="--", alpha=0.6)
+    plt.legend()
+
+    plt.subplot(1, 2, 2) 
+    plt.plot(epochs, val_accuracies, label="Validation Accuracy", color="red", marker="o") 
+    plt.xlabel("Epoch") 
+    plt.ylabel("Accuracy") 
+    plt.title("Validation Accuracy per Epoch") 
+    plt.xticks(epochs)
+    plt.grid(True, linestyle="--", alpha=0.6)
+    plt.legend()
+
+    plt.suptitle("MLP Training CIFAR-10 (Pytorch)", fontsize=16, fontweight="bold", y=1.03)
+
+    plt.tight_layout()
+    plt.savefig("training_curves_pytorch.png", dpi=300, bbox_inches="tight")
+    plt.show()

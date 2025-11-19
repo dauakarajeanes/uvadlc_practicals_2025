@@ -59,7 +59,39 @@ class MLP(nn.Module):
         #######################
         # PUT YOUR CODE HERE  #
         #######################
-        pass
+        super().__init__()
+
+        self.n_inputs = n_inputs
+        self.n_hidden = n_hidden
+        self.n_claases = n_classes
+        self.use_batch_norm = use_batch_norm
+        
+        layers = []
+
+        linear_input = n_inputs
+
+        for i in n_hidden:
+
+          linear = nn.Linear(linear_input, i)
+
+          nn.init.kaiming_normal_(linear.weight, nonlinearity="relu")
+          nn.init.zeros_(linear.bias)
+
+          layers.append(linear)
+
+          if use_batch_norm == True:
+              layers.append(nn.BatchNorm1d(i))
+              
+          layers.append(nn.ELU())
+
+          linear_input = i
+        
+        output_layer = nn.Linear(linear_input, n_classes)
+        nn.init.kaiming_normal_(output_layer.weight, nonlinearity="linear")
+        nn.init.zeros_(output_layer.bias)
+        layers.append(output_layer)
+
+        self.network = nn.Sequential(*layers)
         #######################
         # END OF YOUR CODE    #
         #######################
@@ -81,7 +113,7 @@ class MLP(nn.Module):
         #######################
         # PUT YOUR CODE HERE  #
         #######################
-
+        out = self.network(x)
         #######################
         # END OF YOUR CODE    #
         #######################

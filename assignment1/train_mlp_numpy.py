@@ -32,6 +32,7 @@ import cifar10_utils
 
 import torch
 
+import matplotlib.pyplot as plt
 
 def accuracy(predictions, targets):
     """
@@ -53,6 +54,9 @@ def accuracy(predictions, targets):
     #######################
     # PUT YOUR CODE HERE  #
     #######################
+
+    predicted = np.argmax(predictions, axis=1)
+    accuracy = np.mean(predicted == targets)
 
     #######################
     # END OF YOUR CODE    #
@@ -81,7 +85,20 @@ def evaluate_model(model, data_loader):
     #######################
     # PUT YOUR CODE HERE  #
     #######################
+    N = 0
+    correct = 0
 
+    for x, y in data_loader:
+        
+        x = x.reshape(x.shape[0], -1)
+
+        predictions = model.forward(x)
+
+        correct = correct + (accuracy(predictions, y) * x.shape[0])
+
+        N = N + x.shape[0]
+
+    avg_accuracy = correct / N
     #######################
     # END OF YOUR CODE    #
     #######################
@@ -135,14 +152,65 @@ def train(hidden_dims, lr, batch_size, epochs, seed, data_dir):
     #######################
 
     # TODO: Initialize model and loss module
-    model = ...
-    loss_module = ...
+
+    #change number of inputs?
+    model = MLP(3072, hidden_dims, 10)
+    loss_module = CrossEntropyModule()
     # TODO: Training loop including validation
-    val_accuracies = ...
+    val_accuracies = []
+    train_losses = []
+    best_val = -1.0
+    best_model = None
+  
+
+    for epoch in range(epochs):
+        
+        epoch_loss = 0.0
+        samples = 0
+        
+        for x, y in cifar10_loader['train']:
+            
+          x_size = x.shape[0]  
+
+          x = x.reshape(x_size, -1)
+
+          probabilities = model.forward(x)
+
+          loss = loss_module.forward(probabilities, y)
+
+          dloss = loss_module.backward(probabilities, y)
+
+          model.backward(dloss)
+
+          for layer in model.layers:
+              if hasattr(layer, "params") and "weight" in layer.params:
+                  layer.params["weight"] -= lr * layer.grads["weight"]
+                  layer.params["bias"] -= lr * layer.grads["bias"]
+          
+          epoch_loss = epoch_loss + (loss * x_size)
+          samples = samples +  x_size
+            
+          
+        avg_train_loss = epoch_loss / max(1, samples)
+        train_losses.append(avg_train_loss)
+
+        val_acc_epoch = evaluate_model(model, cifar10_loader["validation"])
+        val_accuracies.append(val_acc_epoch)
+
+        if val_acc_epoch > best_val:
+            best_val = val_acc_epoch
+            best_model = deepcopy(model)
+
+        print(f"Epoch: {epoch} - train loss: {avg_train_loss} - validation accuracy: {val_acc_epoch}")
+    
     # TODO: Test best model
-    test_accuracy = ...
+    if best_model is not None:
+        model = best_model
+
+    test_accuracy = evaluate_model(model, cifar10_loader["test"])
     # TODO: Add any information you might want to save for plotting
-    logging_dict = ...
+    logging_dict = {"train losses": train_losses, "validation accuracies": val_accuracies, "test accuracy": test_accuracy}
+    np.savez("training_logs(numpy).npz", train_losses=train_losses, val_accuracies=val_accuracies, test_accuracy=test_accuracy)
     #######################
     # END OF YOUR CODE    #
     #######################
@@ -176,5 +244,41 @@ if __name__ == '__main__':
     kwargs = vars(args)
 
     train(**kwargs)
-    # Feel free to add any additional functions, such as plotting of the loss curve here
+    #Feel free to add any additional functions, such as plotting of the loss curve here
+    logs = np.load("training_logs(numpy).npz", allow_pickle=True)
+    train_losses = logs["train_losses"]
+    val_accuracies = logs["val_accuracies"]
+    test_accuracy = logs["test_accuracy"]
+
+    print(f"Best validation accuracy (NumPy): {max(val_accuracies):.4f}")
+    print(f"Test accuracy (NumPy): {test_accuracy:.4f}")
+
+    epochs = np.arange(1, len(train_losses) + 1)
+
+    plt.figure(figsize=(12, 5))
+
+    plt.subplot(1, 2, 1)
+    plt.plot(epochs, train_losses, label="Train Loss (NumPy)", color="blue", marker="o")
+    plt.xlabel("Epoch")
+    plt.ylabel("Loss")
+    plt.title("Training Loss per Epoch")
+    plt.xticks(epochs)
+    plt.grid(True, linestyle="--", alpha=0.6)
+    plt.legend()
+
+    plt.subplot(1, 2, 2) 
+    plt.plot(epochs, val_accuracies, label="Validation Accuracy", color="red", marker="o") 
+    plt.xlabel("Epoch") 
+    plt.ylabel("Accuracy") 
+    plt.title("Validation Accuracy per Epoch") 
+    plt.xticks(epochs)
+    plt.grid(True, linestyle="--", alpha=0.6)
+    plt.legend()
+
+    plt.suptitle("MLP Training CIFAR-10 (Numpy)", fontsize=16, fontweight="bold", y=1.03)
+
+    plt.tight_layout()
+    plt.savefig("training_curves_numpy.png", dpi=300, bbox_inches="tight")
+    plt.show()
+
     
